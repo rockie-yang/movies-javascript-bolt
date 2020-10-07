@@ -4,16 +4,17 @@ var MovieCast = require('./models/MovieCast');
 var _ = require('lodash');
 
 var neo4j = window.neo4j.v1;
-var driver = neo4j.driver("bolt://localhost", neo4j.auth.basic("neo4j", "abcde"));
+var driver = neo4j.driver("bolt://localhost:7687", neo4j.auth.basic("neo4j", "admin"));
 
 function searchMovies(queryString) {
   var session = driver.session();
+  const title = `'(?i).*${queryString}.*'`
+
   return session
     .run(
-      'MATCH (movie:Movie) \
-      WHERE movie.title =~ {title} \
-      RETURN movie',
-      {title: '(?i).*' + queryString + '.*'}
+      `MATCH (movie:Movie) \
+      WHERE movie.title =~ ${title} \
+      RETURN movie`
     )
     .then(result => {
       session.close();
@@ -31,12 +32,12 @@ function getMovie(title) {
   var session = driver.session();
   return session
     .run(
-      "MATCH (movie:Movie {title:{title}}) \
+      `MATCH (movie:Movie ${title}:${title}) \
       OPTIONAL MATCH (movie)<-[r]-(person:Person) \
       RETURN movie.title AS title, \
       collect([person.name, \
            head(split(lower(type(r)), '_')), r.roles]) AS cast \
-      LIMIT 1", {title})
+      LIMIT 1`)
     .then(result => {
       session.close();
 
@@ -54,31 +55,32 @@ function getMovie(title) {
 
 function getGraph() {
   var session = driver.session();
+  const limit = 100;
   return session.run(
-    'MATCH (m:Movie)<-[:ACTED_IN]-(a:Person) \
+    `MATCH (m:Movie)<-[:ACTED_IN]-(a:Person) \
     RETURN m.title AS movie, collect(a.name) AS cast \
-    LIMIT {limit}', {limit: 100})
+    LIMIT 100`)
     .then(results => {
       session.close();
       var nodes = [], rels = [], i = 0;
       results.records.forEach(res => {
-        nodes.push({title: res.get('movie'), label: 'movie'});
+        nodes.push({ title: res.get('movie'), label: 'movie' });
         var target = i;
         i++;
 
         res.get('cast').forEach(name => {
-          var actor = {title: name, label: 'actor'};
+          var actor = { title: name, label: 'actor' };
           var source = _.findIndex(nodes, actor);
           if (source == -1) {
             nodes.push(actor);
             source = i;
             i++;
           }
-          rels.push({source, target})
+          rels.push({ source, target })
         })
       });
 
-      return {nodes, links: rels};
+      return { nodes, links: rels };
     });
 }
 
